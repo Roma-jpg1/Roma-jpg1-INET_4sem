@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+package shipments.v1;
+
+service ShipmentsService {
+  rpc CreateShipment (CreateShipmentRequest) returns (CreateShipmentResponse);
+  rpc TrackShipment (TrackShipmentRequest) returns (stream ShipmentUpdate);
+}
+
+message CreateShipmentRequest {
+  string tracking = 1;
+}
+
+message CreateShipmentResponse {
+  int32 id = 1;
+  string tracking = 2;
+}
+
+message TrackShipmentRequest {
+  int32 id = 1;
+  string tracking = 2;
+}
+
+message ShipmentUpdate {
+  int32 id = 1;
+  string status = 2;
+  string location = 3;
+  int32 sequence = 4;
+}

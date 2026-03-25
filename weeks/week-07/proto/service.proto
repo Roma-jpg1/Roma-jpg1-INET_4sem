@@ -1,16 +1,18 @@
 syntax = "proto3";
 
-// Опишите ваш пакет и сервис здесь
-// package example;
+package profiles.v1;
 
-// service MyService {
-//   rpc MyMethod (MyRequest) returns (MyResponse);
-// }
+service ProfilesService {
+  rpc CreateProfile (CreateProfileRequest) returns (CreateProfileResponse);
+}
 
-// message MyRequest {
-//   string id = 1;
-// }
+message CreateProfileRequest {
+  string name = 1;
+  string phone = 2;
+}
 
-// message MyResponse {
-//   string result = 1;
-// }
+message CreateProfileResponse {
+  int32 id = 1;
+  string name = 2;
+  string phone = 3;
+}
