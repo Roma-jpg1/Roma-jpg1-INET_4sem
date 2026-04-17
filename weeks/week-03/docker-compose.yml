@@ -4,14 +4,14 @@ services:
       context: .
       dockerfile: Dockerfile_main
     expose:
-      - "8278"
+      - "8240"
 
   others:
     build:
       context: .
       dockerfile: Dockerfile_other
     expose:
-      - "8279"
+      - "8241"
 
   nginx:
     image: nginx:alpine

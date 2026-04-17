@@ -1,22 +1,41 @@
-version: '3.9'
 services:
-  app:
-    # Замените на имя образа
-    image: primer/obraz
+  users-svc-s18:
+    build:
+      context: .
+      dockerfile: Dockerfile_main
+    expose:
+      - "8240"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 10s
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8240/health')"]
+      interval: 5s
       timeout: 3s
-      retries: 3
+      retries: 5
+      start_period: 5s
     networks:
-      - app-net
-  gateway:
-    # Замените на имя образа
-    image: primer/obraz
+      - app-network
+
+  others:
+    build:
+      context: .
+      dockerfile: Dockerfile_other
+    expose:
+      - "8241"
+    networks:
+      - app-network
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./infra/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
-      - app
+      - users-svc-s18
+      - others
     networks:
-      - app-net
+      - app-network
+
+
 networks:
-  app-net:
+  app-network:
     driver: bridge
