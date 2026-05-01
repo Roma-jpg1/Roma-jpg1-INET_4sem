@@ -1,1 +1,38 @@
-# В этом месте вам необходимо: Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bookings-app
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: bookings-app
+  template:
+    metadata:
+      labels:
+        app: bookings-app
+    spec:
+      containers:
+      - name: bookings-container
+        image: bookings:latest
+        ports:
+        - containerPort: 8172
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8172
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8172
+          initialDelaySeconds: 5
+          periodSeconds: 5
