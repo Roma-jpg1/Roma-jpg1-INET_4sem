@@ -3,4 +3,5 @@ image:
   repository: primer/obraz
   tag: "dev"
 service:
-  port: 8000
+  name: invoices-svc-s18
+  port: 8148
