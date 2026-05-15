@@ -1,42 +1,68 @@
-name: ci
+name: CI/CD Pipeline
 
 on:
   push:
+    branches: ["main"]
   pull_request:
+    branches: ["main"]
 
 jobs:
-  tests:
+  build-test-publish:
     runs-on: ubuntu-latest
     env:
-      WEEK: "01"
-      GROUP: "431"
-      STUDENT_ID: "s01"
-      IMAGE_NAME: "В этом месте вам необходимо"
+      WEEK: "14"
+      GROUP: "433"
+      STUDENT_ID: "s18"
+      IMAGE_NAME: "tasks-s18"
+      SERVICE_DIR: "weeks/week-14/service"
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-          cache: 'pip'
-      - name: Установка зависимостей
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: |
+            requirements.txt
+            weeks/week-14/service/requirements.txt
+
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
+          pip install flake8 pytest
           pip install -r requirements.txt
-      - name: Линтер (необязательно)
+
+      - name: Lint with flake8
         run: |
-          echo "В этом месте вам необходимо: добавить шаг линтера (ruff/flake8)"
-      - name: Запуск тестов
-        run: make test WEEK=${{ env.WEEK }}
-      - name: Сборка Docker-образа
+          flake8 weeks/week-14/service --count --select=E9,F63,F7,F82 --show-source --statistics
+
+      - name: Test with pytest
         run: |
-          docker build -t $IMAGE_NAME -f weeks/week-10/Dockerfile weeks/week-10
-      - name: Подготовка артефактов
+          pytest -q weeks/week-14/tests
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ env.SERVICE_DIR }}
+          file: ${{ env.SERVICE_DIR }}/Dockerfile
+          tags: ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          outputs: type=docker,dest=/tmp/${{ env.IMAGE_NAME }}.tar
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Prepare artifacts
         run: |
-          mkdir -p artifacts
-          cp weeks/week-10/report.md artifacts/ || true
-          cp weeks/week-14/README.md artifacts/ || true
-      - name: Публикация артефактов
+          mkdir -p artifacts/k8s
+          cp /tmp/${IMAGE_NAME}.tar artifacts/${IMAGE_NAME}.tar
+          cp weeks/week-14/k8s/*.yaml artifacts/k8s/
+          cp weeks/week-14/questions.md artifacts/
+
+      - name: Publish artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: build-artifacts
+          name: tasks-s18-build
           path: artifacts

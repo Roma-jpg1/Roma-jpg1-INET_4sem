@@ -1,6 +1,7 @@
 WEEK ?= 01
+PYTHON ?= python3
 
 .PHONY: test
 
 test:
-	python -m pytest -q weeks/week-$(WEEK)/tests
+	$(PYTHON) -m pytest -q weeks/week-$(WEEK)/tests

@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tasks-app
+  labels:
+    app: tasks-app
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: tasks-app
+  template:
+    metadata:
+      labels:
+        app: tasks-app
+    spec:
+      containers:
+        - name: tasks-container
+          image: tasks-s18:latest
+          ports:
+            - containerPort: 8116
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "250m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8116
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8116
+            initialDelaySeconds: 5
+            periodSeconds: 5
