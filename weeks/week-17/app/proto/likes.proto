@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+service LikeService {
+
+  rpc GetLikesCount (LikeRequest)
+  returns (LikeResponse);
+
+}
+
+message LikeRequest {
+  int32 post_id = 1;
+}
+
+message LikeResponse {
+  int32 count = 1;
+}

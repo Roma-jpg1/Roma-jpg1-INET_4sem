@@ -1,20 +1,47 @@
-from typing import List, Dict
-from xml.etree.ElementTree import Comment
 from fastapi import Depends, FastAPI, HTTPException
 from sqlalchemy.orm import Session
-from .db import SessionLocal, engine, Base
-from .models import Like
-
-app = FastAPI(title="Like Service API", description="API for managing likes on posts")
+from sqlalchemy import text
+from db import SessionLocal, engine, Base
+from models import Like
+import threading
+from grpc_server import start_grpc_server
+from contextlib import asynccontextmanager
 
 Base.metadata.create_all(bind=engine)
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+
+    threading.Thread(
+        target=start_grpc_server,
+        daemon=True
+    ).start()
+
+    print("gRPC thread started")
+
+    yield
+
+    print("Application shutdown")
+
+app = FastAPI(
+    title="Like Service API",
+    description="API for managing likes on posts",
+    lifespan=lifespan,
+)
 def get_db():
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
+
+@app.get("/health")
+def health(db: Session = Depends(get_db)):
+    try:
+        db.execute(text("SELECT 1"))
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"database is unavailable: {e}")
+    return {"status": "ok", "service": "like-service"}
 
 
 @app.get("/likes")

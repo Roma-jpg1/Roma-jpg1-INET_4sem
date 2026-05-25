@@ -1,9 +1,8 @@
-from unittest.mock import Base
-from .db import SessionLocal, engine, Base
-from .models import User
+from db import SessionLocal, engine, Base
+from models import User
 from fastapi import Depends, FastAPI, HTTPException
-from pytest import Session
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 
 
 Base.metadata.create_all(bind=engine)
@@ -17,6 +16,14 @@ def get_db():
     finally:
         db.close()
 
+@app.get("/health")
+def health(db: Session = Depends(get_db)):
+    try:
+        db.execute(text("SELECT 1"))
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"database is unavailable: {e}")
+    return {"status": "ok", "service": "user-service"}
+
 
 @app.get("/users")
 def get_users(db: Session = Depends(get_db)):
@@ -26,7 +33,7 @@ def get_users(db: Session = Depends(get_db)):
 def create_user(email: str, password: str, db: Session = Depends(get_db)):
     hashed_password = password + "_hashed"
 
-    if exisits := db.query(User).filter(User.email == email).first():
+    if existing_user := db.query(User).filter(User.email == email).first():
         return {"message": f"User with email {email} already exists"}
     
     new_user = User(email=email, hashed_password=hashed_password)

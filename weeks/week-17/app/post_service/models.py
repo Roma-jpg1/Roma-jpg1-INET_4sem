@@ -1,5 +1,5 @@
 from sqlalchemy import Column, Integer, String
-from .db import Base
+from db import Base
 
 class Post(Base):
     __tablename__ = "posts"
