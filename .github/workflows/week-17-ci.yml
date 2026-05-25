@@ -1,0 +1,61 @@
+name: Week 17 CI
+
+on:
+  push:
+    paths:
+      - ".github/workflows/week-17-ci.yml"
+      - "weeks/week-17/**"
+      - "coursekit/**"
+      - "variants/**/week-17.json"
+      - "requirements.txt"
+  pull_request:
+    paths:
+      - ".github/workflows/week-17-ci.yml"
+      - "weeks/week-17/**"
+      - "coursekit/**"
+      - "variants/**/week-17.json"
+      - "requirements.txt"
+
+jobs:
+  test-and-smoke:
+    runs-on: ubuntu-latest
+    env:
+      GROUP: "433"
+      STUDENT_ID: "s18"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run week-17 tests
+        run: make test WEEK=17
+
+      - name: Build and start services
+        run: |
+          docker compose -f weeks/week-17/app/docker-compose.yml up --build -d
+
+      - name: Smoke test REST + gRPC path
+        run: |
+          sleep 20
+          docker compose -f weeks/week-17/app/docker-compose.yml exec -T like-service python -c "import socket; s=socket.socket(); s.settimeout(3); assert s.connect_ex(('127.0.0.1',50051))==0, 'gRPC port 50051 is not open'; s.close()"
+          docker compose -f weeks/week-17/app/docker-compose.yml exec -T post-service python -c "import requests; p=requests.post('http://127.0.0.1:8000/posts', params={'title':'ci-smoke','content':'ok'}).json(); r=requests.get(f\"http://127.0.0.1:8000/posts/{p['id']}\"); assert r.status_code==200; data=r.json(); assert 'likes_count' in data; print(data)"
+
+      - name: Show logs on failure
+        if: failure()
+        run: docker compose -f weeks/week-17/app/docker-compose.yml logs --no-color
+
+      - name: Stop services
+        if: always()
+        run: docker compose -f weeks/week-17/app/docker-compose.yml down -v
