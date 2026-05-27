@@ -1,0 +1,87 @@
+\usepackage{fontspec}
+\setmainfont{Times New Roman}
+\setmonofont{Courier New}
+\newfontfamily{\cyrillicfonttt}{Courier New}
+
+\usepackage{polyglossia}
+\setdefaultlanguage{russian}
+\setotherlanguage{english}
+
+% Поля согласно ГОСТ и методичке: левое 30 мм, правое 10 мм, верхнее и нижнее 20 мм
+\usepackage[left=30mm, right=10mm, top=20mm, bottom=20mm]{geometry}
+
+\usepackage{indentfirst} % Абзацный отступ
+\setlength{\parindent}{1.25cm}
+
+\usepackage{setspace} % Полуторный интервал
+\onehalfspacing
+
+\usepackage{titlesec} % Настройка заголовков
+% Заголовки с абзацного отступа, строчными (начиная с прописной)
+\titleformat{\chapter}[block]
+  {\normalfont\bfseries\Large}{\thechapter}{1em}{}
+\titlespacing*{\chapter}{\parindent}{*0}{15mm}
+
+\titleformat{\section}[block]
+  {\normalfont\bfseries\large}{\thesection}{1em}{}
+\titlespacing*{\section}{\parindent}{8mm}{15mm}
+
+\titleformat{\subsection}[block]
+  {\normalfont\bfseries\normalsize}{\thesubsection}{1em}{}
+\titlespacing*{\subsection}{\parindent}{8mm}{15mm}
+
+% Настройка содержания
+\usepackage{tocloft}
+\renewcommand{\cfttoctitlefont}{\hfill\normalfont\bfseries\Large}
+\renewcommand{\cftaftertoctitle}{\hfill\mbox{}}
+\renewcommand{\cftchapleader}{\cftdotfill{\cftdotsep}}
+
+% Графика и математика
+\usepackage{graphicx}
+\usepackage{amsmath, amssymb}
+
+% Таблицы
+\usepackage{array}
+\setlength{\tabcolsep}{4pt}
+
+% Списки
+\usepackage{enumitem}
+\setlist{nosep}
+\setlist[itemize]{label=--} % дефис для маркированных списков
+\setlist[enumerate]{label=\arabic*)} % 1), 2) для нумерованных
+
+% Подписи к рисункам и таблицам
+\usepackage{caption}
+\captionsetup[table]{justification=raggedright, singlelinecheck=false, labelsep=endash, format=hang}
+\captionsetup[figure]{justification=centering, labelsep=endash, name=Рисунок}
+
+% Листинги кода
+\usepackage{listings}
+\renewcommand{\lstlistingname}{Листинг}
+\captionsetup[lstlisting]{justification=raggedright, singlelinecheck=false, labelsep=endash, format=hang}
+\lstset{
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    showstringspaces=false,
+    frame=none, % невидимые границы, как в методичке
+    numbers=none, % нумерация строк (по умолчанию выключена, можно включить numbers=left)
+    xleftmargin=1.25cm, % абзацный отступ
+    tabsize=4
+}
+
+% Нумерация формул в пределах раздела
+\numberwithin{equation}{chapter}
+
+% Для ссылок
+\usepackage[hidelinks]{hyperref}
+
+% Нумерация страниц справа внизу
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{} % очистка всех полей
+\renewcommand{\headrulewidth}{0pt} % без линии в колонтитуле
+\fancyfoot[R]{\thepage}
+
+% Предотвращение выхода текста за рамки (Overfull \hbox)
+\tolerance=1000
+\emergencystretch=3em

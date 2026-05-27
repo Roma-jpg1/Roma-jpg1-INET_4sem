@@ -47,6 +47,21 @@
 docker compose -f weeks/week-17/app/docker-compose.yml up --build
 ```
 
+## Kubernetes-деплой
+Для кластера добавлены манифесты в `weeks/week-17/k8s`:
+1. `namespace.yaml` - namespace `likes-s18`.
+2. Три PostgreSQL (Deployment + Service): `like-db`, `post-db`, `user-db`.
+3. Три API (Deployment + Service): `like-service`, `post-service`, `user-service`.
+
+DNS-имена сервисов в Kubernetes совпадают с хостами в коде (`like-db`, `post-db`, `user-db`, `like-service`), поэтому приложение запускается без изменений Python-кода.
+
+Применение:
+
+```bash
+kubectl apply -f weeks/week-17/k8s/namespace.yaml
+kubectl apply -f weeks/week-17/k8s/
+```
+
 ## Отказоустойчивость и связность
 1. Если gRPC недоступен, `post-service` не падает: в обработчике исключения возвращает `likes_count = 0`.
 2. Сервисы разделены по данным (разные БД), поэтому сбой одной БД не ломает все домены сразу.
@@ -73,3 +88,12 @@ docker compose -f weeks/week-17/app/docker-compose.yml logs -f
    - открыт ли gRPC порт `50051` у `like-service`,
    - работает ли сценарий `post-service -> gRPC -> like-service`.
 5. Сбор логов при ошибке и корректное завершение окружения (`down -v`).
+
+Для этапа Continuous Delivery добавлен `.github/workflows/week-17-cd.yml`:
+1. Переиспользует тесты как quality gate.
+2. Собирает и публикует три сервисных образа в GHCR с тегом `${GITHUB_SHA}`.
+3. Применяет Kubernetes-манифесты (`kubectl apply`).
+4. Обновляет образы в Deployments через `kubectl set image`.
+5. Ждет завершения rolling update через `kubectl rollout status`.
+
+Таким образом, изменение в `main` проходит путь: тесты -> публикация образов -> автоматический деплой в кластер.

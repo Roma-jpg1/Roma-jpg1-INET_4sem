@@ -1,0 +1,439 @@
+\chapter{Реализация микросервисного проекта РГР}
+
+\section{Постановка задачи}
+
+В расчетно-графической работе разработан проект \texttt{likes-s18}. Основная идея проекта --
+разделить функциональность социальной платформы на несколько независимых сервисов и связать их
+через разные протоколы взаимодействия. В результате получилась система, в которой каждый сервис
+отвечает за отдельный домен и может развиваться независимо.
+
+В состав проекта входят три сервиса:
+\begin{itemize}
+    \item \texttt{user-service} -- регистрация и получение пользователей;
+    \item \texttt{post-service} -- создание, получение и удаление постов;
+    \item \texttt{like-service} -- создание лайков, получение лайков и подсчет их количества.
+\end{itemize}
+
+Ключевой пользовательский сценарий выглядит следующим образом: клиент создает пост, затем
+создает лайки к этому посту, после чего запрашивает пост по идентификатору. При выдаче поста
+\texttt{post-service} обращается к \texttt{like-service} по gRPC и добавляет в ответ поле
+\texttt{likes\_count}. Благодаря этому клиенту не нужно выполнять дополнительный запрос для
+подсчета лайков.
+
+\section{Архитектура системы}
+
+Разделение на сервисы выполнено по бизнес-доменам. Пользователи, посты и лайки имеют разную
+ответственность, разные модели данных и потенциально разную нагрузку. Поэтому каждый домен
+вынесен в отдельный сервис и работает со своей базой PostgreSQL \cite{postgres_docs}.
+
+Архитектура проекта построена по следующей схеме:
+\begin{enumerate}
+    \item внешний клиент обращается к REST API сервисов;
+    \item \texttt{post-service} хранит и возвращает данные постов;
+    \item \texttt{like-service} хранит данные лайков;
+    \item при получении конкретного поста \texttt{post-service} выполняет gRPC-вызов в
+    \texttt{like-service};
+    \item \texttt{like-service} подсчитывает лайки в своей базе данных и возвращает результат.
+\end{enumerate}
+
+Такое разделение снижает связанность. Например, изменение логики подсчета лайков не требует
+изменять код сервиса пользователей. Аналогично, если нужно масштабировать обработку лайков, можно
+увеличить количество экземпляров только \texttt{like-service}, не затрагивая остальные части
+системы \cite{week17_arch}.
+
+\section{Выбор протоколов взаимодействия}
+
+Для внешнего API выбран REST, так как он прост в ручном тестировании, хорошо поддерживается
+браузерами, HTTP-клиентами и FastAPI \cite{fastapi_docs}. Для внутреннего взаимодействия между
+\texttt{post-service} и \texttt{like-service} выбран gRPC. Он удобен тем, что контракт описывается
+в \texttt{.proto}-файле, а клиентский и серверный код используют сгенерированные классы
+\cite{grpc_docs}.
+
+Сравнение используемых протоколов приведено в таблице \ref{tab:rest-grpc}.
+
+\begin{table}[h!]
+    \caption{Сравнение REST и gRPC в проекте}
+    \label{tab:rest-grpc}
+    \noindent
+    \begin{tabular*}{\textwidth}{|p{0.22\textwidth}|p{0.30\textwidth}|p{0.34\textwidth}|}
+        \hline
+        Критерий & REST & gRPC \\
+        \hline
+        Назначение & Внешнее API & Внутренний вызов подсчета лайков \\
+        \hline
+        Формат данных & JSON & Protobuf \\
+        \hline
+        Контракт & HTTP endpoint-ы & \texttt{likes.proto} \\
+        \hline
+        Удобство & Просто проверять через curl & Удобно для сервис-сервис связи \\
+        \hline
+    \end{tabular*}
+\end{table}
+
+\section{REST API сервисов}
+
+REST API реализовано на FastAPI. Каждый сервис создает собственное приложение и описывает набор
+endpoint-ов для работы со своими сущностями. Например, в \texttt{like-service} реализованы
+методы создания лайка, получения списка лайков, получения лайка по идентификатору, удаления лайка
+и отдельный HTTP endpoint для подсчета лайков по посту.
+
+Фрагмент REST-обработчика создания лайка приведен в листинге \ref{lst:create-like}.
+
+\begin{lstlisting}[language=Python, caption={Создание лайка в like-service}, label={lst:create-like}]
+@app.post("/likes")
+def create_like(post_id: int, db: Session = Depends(get_db)):
+    new_like = Like(post_id=post_id)
+    db.add(new_like)
+    db.commit()
+    db.refresh(new_like)
+    return new_like
+\end{lstlisting}
+
+В этом обработчике FastAPI получает параметр \texttt{post\_id}, открывает сессию SQLAlchemy
+через зависимость \texttt{Depends(get\_db)}, создает объект модели \texttt{Like}, сохраняет его
+в базе данных и возвращает созданную запись. Аналогичный подход используется в сервисах
+пользователей и постов \cite{sqlalchemy_docs}.
+
+\section{gRPC-контракт и межсервисный вызов}
+
+gRPC-контракт описывает один метод \texttt{GetLikesCount}. На вход метод принимает идентификатор
+поста, а в ответ возвращает количество лайков. Контракт приведен в листинге
+\ref{lst:proto-contract}.
+
+\begin{lstlisting}[caption={gRPC-контракт likes.proto}, label={lst:proto-contract}]
+syntax = "proto3";
+
+service LikeService {
+  rpc GetLikesCount (LikeRequest) returns (LikeResponse);
+}
+
+message LikeRequest {
+  int32 post_id = 1;
+}
+
+message LikeResponse {
+  int32 count = 1;
+}
+\end{lstlisting}
+
+Серверная часть gRPC находится в \texttt{like-service}. Она получает \texttt{post\_id}, выполняет
+запрос к таблице лайков и возвращает количество найденных записей. Основной фрагмент реализации
+показан в листинге \ref{lst:grpc-server}.
+
+\begin{lstlisting}[language=Python, caption={Метод GetLikesCount на стороне like-service}, label={lst:grpc-server}]
+def GetLikesCount(self, request, context):
+    db = SessionLocal()
+    count = db.query(Like).filter(
+        Like.post_id == request.post_id
+    ).count()
+    return likes_pb2.LikeResponse(count=count)
+\end{lstlisting}
+
+На стороне \texttt{post-service} создается gRPC-канал до контейнера \texttt{like-service}.
+Затем вызывается метод \texttt{GetLikesCount}, а результат добавляется в REST-ответ клиенту.
+Этот фрагмент приведен в листинге \ref{lst:grpc-call}.
+
+\begin{lstlisting}[language=Python, caption={Вызов gRPC в post-service}, label={lst:grpc-call}]
+channel = grpc.insecure_channel("like-service:50051")
+stub = likes_pb2_grpc.LikeServiceStub(channel)
+response = stub.GetLikesCount(
+    likes_pb2.LikeRequest(post_id=post_id)
+)
+likes_count = response.count
+\end{lstlisting}
+
+Важная деталь состоит в том, что имя \texttt{like-service} используется как сетевое имя внутри
+Docker Compose. Благодаря встроенной DNS-сети Compose сервисы могут обращаться друг к другу по
+именам, указанным в файле \texttt{docker-compose.yml}. В Kubernetes используется тот же подход:
+внутри namespace сервис доступен по DNS-имени \texttt{like-service}.
+
+\section{Запуск REST и gRPC внутри like-service}
+
+\texttt{like-service} должен одновременно обслуживать HTTP-запросы FastAPI и gRPC-запросы от
+\texttt{post-service}. Для этого gRPC-сервер запускается в отдельном потоке во время старта
+FastAPI-приложения. Фрагмент запуска показан в листинге \ref{lst:lifespan}.
+
+\begin{lstlisting}[language=Python, caption={Запуск gRPC-сервера в lifespan FastAPI}, label={lst:lifespan}]
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    threading.Thread(
+        target=start_grpc_server,
+        daemon=True
+    ).start()
+    print("gRPC thread started")
+    yield
+    print("Application shutdown")
+\end{lstlisting}
+
+Такое решение позволяет поднять оба интерфейса в одном контейнере: REST API работает на порту
+\texttt{8000}, а gRPC-сервер слушает порт \texttt{50051}. При этом внешнему клиенту доступен
+REST-интерфейс, а внутренние сервисы используют gRPC.
+
+\section{Отказоустойчивость и healthcheck}
+
+В \texttt{post-service} gRPC-вызов обернут в \texttt{try/except}. Если \texttt{like-service}
+временно недоступен, сервис постов не падает, а возвращает пост с \texttt{likes\_count = 0}.
+Это пример деградации функциональности: клиент все равно получает основную информацию о посте,
+но без точного количества лайков.
+
+\begin{lstlisting}[language=Python, caption={Обработка ошибки gRPC-вызова}, label={lst:grpc-fallback}]
+try:
+    response = stub.GetLikesCount(
+        likes_pb2.LikeRequest(post_id=post_id)
+    )
+    likes_count = response.count
+except Exception as e:
+    print("gRPC ERROR:", e)
+    likes_count = 0
+\end{lstlisting}
+
+Для проверки состояния сервисов реализован endpoint \texttt{/health}. Он не просто возвращает
+статический ответ, а выполняет запрос \texttt{SELECT 1} к базе данных. Поэтому healthcheck
+проверяет не только доступность HTTP-приложения, но и подключение к хранилищу.
+
+\begin{lstlisting}[language=Python, caption={Проверка состояния сервиса}, label={lst:health}]
+@app.get("/health")
+def health(db: Session = Depends(get_db)):
+    try:
+        db.execute(text("SELECT 1"))
+    except Exception as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"database is unavailable: {e}"
+        )
+    return {"status": "ok", "service": "post-service"}
+\end{lstlisting}
+
+\section{Контейнеризация через Docker}
+
+Каждый сервис упакован в отдельный Docker-образ. Dockerfile задает базовый Python-образ,
+рабочую директорию, установку зависимостей, копирование исходного кода и команду запуска
+FastAPI-приложения через \texttt{uvicorn}. Пример Dockerfile для \texttt{post-service} приведен
+в листинге \ref{lst:dockerfile}.
+
+\begin{lstlisting}[caption={Dockerfile сервиса постов}, label={lst:dockerfile}]
+FROM python:3.12
+
+WORKDIR /app
+
+COPY ./post_service/requirements.txt ./requirements.txt
+
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY ./post_service /app
+COPY ./proto /app/proto
+
+CMD ["python", "-m", "uvicorn", "posts:app",
+     "--host", "0.0.0.0", "--port", "8000"]
+\end{lstlisting}
+
+Отдельная упаковка сервисов дает несколько преимуществ: окружение становится воспроизводимым,
+зависимости не смешиваются между сервисами, а запуск приложения не зависит от локальной настройки
+Python на машине разработчика \cite{docker_compose_docs}.
+
+\section{Оркестрация через Docker Compose}
+
+Для локального запуска всех компонентов используется Docker Compose. В одном файле описаны три
+API-сервиса и три базы данных PostgreSQL. Внешние порты проброшены следующим образом:
+\begin{itemize}
+    \item \texttt{like-service}: REST -- \texttt{8001}, gRPC -- \texttt{50051};
+    \item \texttt{post-service}: REST -- \texttt{8002};
+    \item \texttt{user-service}: REST -- \texttt{8003}.
+\end{itemize}
+
+Фрагмент конфигурации \texttt{like-service} приведен в листинге \ref{lst:compose-like}.
+
+\begin{lstlisting}[caption={Фрагмент docker-compose.yml для like-service}, label={lst:compose-like}]
+like-service:
+  build:
+    context: .
+    dockerfile: like_service/Dockerfile
+  ports:
+    - "8001:8000"
+    - "50051:50051"
+  depends_on:
+    like-db:
+      condition: service_healthy
+  healthcheck:
+    test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).read()\""]
+    interval: 10s
+    timeout: 5s
+    retries: 5
+    start_period: 20s
+\end{lstlisting}
+
+Параметр \texttt{depends\_on} с условием \texttt{service\_healthy} нужен для корректного порядка
+запуска. API-контейнер стартует только после того, как контейнер базы данных пройдет проверку
+готовности. Для PostgreSQL используется команда \texttt{pg\_isready}; она позволяет понять, что
+СУБД уже принимает подключения.
+
+Запуск всей системы выполняется одной командой из каталога приложения:
+\begin{lstlisting}[caption={Запуск контейнеров проекта}]
+docker compose up -d --build
+\end{lstlisting}
+
+\section{Настройка CI}
+
+Для проекта настроен GitHub Actions workflow, который автоматически проверяет РГР при изменении
+кода сервисов, вариантов, зависимостей или самого файла CI. Pipeline выполняется в окружении
+\texttt{ubuntu-latest} и использует переменные \texttt{GROUP=433} и \texttt{STUDENT\_ID=s18},
+чтобы тесты брали правильный вариант проекта.
+
+Основные шаги CI:
+\begin{enumerate}
+    \item checkout репозитория;
+    \item установка Python 3.12;
+    \item установка зависимостей из \texttt{requirements.txt};
+    \item запуск тестов командой \texttt{make test WEEK=17};
+    \item сборка и запуск контейнеров через Docker Compose;
+    \item smoke-тест REST + gRPC-сценария;
+    \item вывод логов при ошибке;
+    \item остановка контейнеров и удаление volume-ов.
+\end{enumerate}
+
+Фрагмент настройки CI приведен в листинге \ref{lst:ci}.
+
+\begin{lstlisting}[caption={Фрагмент GitHub Actions CI}, label={lst:ci}]
+- name: Run tests
+  run: make test WEEK=17
+
+- name: Build and start services
+  run: docker compose -f "$APP_DIR/docker-compose.yml" up --build -d
+
+- name: Smoke test REST + gRPC path
+  run: |
+    sleep 20
+    docker compose -f "$APP_DIR/docker-compose.yml" exec -T like-service python -c "import socket; s=socket.socket(); s.settimeout(3); assert s.connect_ex(('127.0.0.1',50051))==0"
+    docker compose -f "$APP_DIR/docker-compose.yml" exec -T post-service python -c "import requests; p=requests.post('http://127.0.0.1:8000/posts', params={'title':'ci-smoke','content':'ok'}).json(); r=requests.get(f\"http://127.0.0.1:8000/posts/{p['id']}\"); assert r.status_code==200; assert 'likes_count' in r.json()"
+\end{lstlisting}
+
+Smoke-тест важен тем, что он проверяет не только наличие файлов или прохождение статического
+теста, но и фактический запуск системы в контейнерах. Сначала проверяется, что gRPC-порт
+\texttt{50051} открыт внутри \texttt{like-service}. Затем внутри \texttt{post-service} создается
+пост и выполняется запрос на получение этого поста. Успешная проверка поля \texttt{likes\_count}
+подтверждает, что цепочка \texttt{post-service -> gRPC -> like-service} работает.
+
+\section{Kubernetes-манифесты}
+
+Для кластерного развертывания добавлена директория \texttt{weeks/week-17/k8s}, в которой
+описаны все ресурсы проекта:
+\begin{itemize}
+    \item namespace \texttt{likes-s18};
+    \item Deployment + Service для \texttt{user-service}, \texttt{post-service}, \texttt{like-service};
+    \item Deployment + Service для \texttt{user-db}, \texttt{post-db}, \texttt{like-db};
+    \item файл \texttt{kustomization.yaml} для применения полного набора манифестов.
+\end{itemize}
+
+Фрагмент манифеста \texttt{like-service} приведен в листинге \ref{lst:k8s-like-service}.
+
+\begin{lstlisting}[caption={Фрагмент Kubernetes-манифеста like-service}, label={lst:k8s-like-service}]
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: like-service
+  namespace: likes-s18
+spec:
+  replicas: 2
+  template:
+    spec:
+      containers:
+        - name: like-service
+          image: ghcr.io/example/likes-s18-like-service:latest
+          ports:
+            - containerPort: 8000
+            - containerPort: 50051
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+\end{lstlisting}
+
+В этом манифесте фиксируется желаемое число реплик, образ контейнера, открытые порты и
+проверка готовности через endpoint \texttt{/health}. Наличие readiness/liveness-проб позволяет
+оркестратору не отправлять трафик в неготовые pod-ы и автоматически перезапускать их при сбоях
+\cite{kubernetes_docs}.
+
+Базы данных также описаны как отдельные Deployment/Service-ресурсы. Для PostgreSQL используется
+probe на основе \texttt{pg\_isready}, что обеспечивает корректный запуск API только после
+готовности хранилища.
+
+\section{Continuous Delivery (CD)}
+
+Отдельный workflow \texttt{week-17-cd.yml} реализует конвейер доставки:
+\begin{enumerate}
+    \item запуск тестов;
+    \item сборка и публикация трех образов в GHCR;
+    \item применение Kubernetes-манифестов;
+    \item обновление образов в Deployment через \texttt{kubectl set image};
+    \item ожидание завершения rolling update через \texttt{kubectl rollout status}.
+\end{enumerate}
+
+Ключевой фрагмент CD приведен в листинге \ref{lst:cd-deploy}.
+
+\begin{lstlisting}[caption={Шаги deploy в GitHub Actions CD}, label={lst:cd-deploy}]
+- name: Apply manifests
+  run: |
+    kubectl apply -f weeks/week-17/k8s/namespace.yaml
+    kubectl apply -f weeks/week-17/k8s/
+
+- name: Update images to current commit
+  run: |
+    kubectl -n "${K8S_NAMESPACE}" set image deployment/like-service \
+      like-service=ghcr.io/${{ github.repository }}/week-17-like-service:${{ github.sha }}
+
+- name: Wait for rollout
+  run: kubectl -n "${K8S_NAMESPACE}" rollout status deployment/like-service --timeout=180s
+\end{lstlisting}
+
+Таким образом, при изменении кода в ветке \texttt{main} pipeline доводит систему до нового
+согласованного состояния в кластере: тесты проходят, образы публикуются, а деплой обновляется без
+полного простоя за счет rolling update \cite{github_actions_docs,kubectl_docs}.
+
+\section{Результаты выполнения РГР}
+
+В результате выполнения РГР получена микросервисная система, которая:
+\begin{itemize}
+    \item реализует REST API для пользователей, постов и лайков;
+    \item использует gRPC для внутреннего подсчета лайков;
+    \item хранит данные каждого сервиса в отдельной базе PostgreSQL;
+    \item запускается локально через Docker Compose;
+    \item имеет healthcheck-и для API и баз данных;
+    \item автоматически проверяется в GitHub Actions CI;
+    \item разворачивается в Kubernetes через набор манифестов;
+    \item поддерживает CD-сценарий публикации образов и rolling update.
+\end{itemize}
+
+Главным результатом является не только работоспособность отдельных endpoint-ов, но и проверенная
+интеграция нескольких компонентов: HTTP API, gRPC, баз данных, контейнеров и CI-сценария.
+
+\section{Ответы на вопросы самопроверки}
+
+\textbf{1. Критерии разделения на сервисы.}
+Разделение выполнено по бизнес-возможностям системы: пользователи, посты, лайки. Каждый сервис
+владеет своим API и своей базой данных. Такая модель уменьшает связанность модулей и позволяет
+масштабировать наиболее нагруженные части системы отдельно.
+
+\textbf{2. Причины выбора стека.}
+Python и FastAPI выбраны за высокую скорость разработки и встроенную поддержку OpenAPI.
+PostgreSQL использован как стабильная реляционная СУБД. REST применен для клиентского API, а gRPC
+-- для внутреннего вызова с явным контрактом через \texttt{.proto}.
+
+\textbf{3. Обработка ошибок и устойчивость к сбоям.}
+Критичный внешний endpoint сервиса постов реализует безопасное поведение при ошибке gRPC-вызова:
+исключение перехватывается, сервис не падает, а клиент получает валидный ответ с нулевым
+значением лайков.
+
+\textbf{4. Подход к обновлению без простоя.}
+В проект добавлен CD workflow для Kubernetes: после тестов публикуются новые образы, затем
+выполняется \texttt{kubectl set image} и контролируется \texttt{kubectl rollout status}. За счет
+readinessProbe и механизма rolling update трафик переключается на новые pod-ы постепенно, что
+позволяет обновлять сервисы без полной остановки системы.
+
+\textbf{5. Наиболее сложный этап интеграции.}
+Сложность представлял одновременный запуск REST и gRPC в \texttt{like-service}. Для корректной
+работы gRPC-сервер был вынесен в отдельный поток и запущен в lifecycle FastAPI-приложения.
+
+\textbf{6. Возможные улучшения.}
+При дальнейшем развитии проекта рекомендуется добавить централизованное логирование, сбор метрик
+Prometheus/Grafana, retry/backoff и circuit breaker для внутренних вызовов, а также API Gateway
+для маршрутизации и единой точки авторизации.

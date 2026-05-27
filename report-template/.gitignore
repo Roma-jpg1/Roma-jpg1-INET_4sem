@@ -1,0 +1,26 @@
+# LaTeX build artifacts
+*.aux
+*.bbl
+*.blg
+*.bcf
+*.fls
+*.fdb_latexmk
+*.log
+*.out
+*.run.xml
+main-blx.bib
+*.synctex.gz
+*.toc
+*.lof
+*.lot
+*.nav
+*.snm
+*.vrb
+*.xdv
+
+# Chapters auxiliary files
+chapters/*.aux
+
+# OS specific files
+.DS_Store
+Thumbs.db
